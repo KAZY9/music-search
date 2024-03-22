@@ -1,7 +1,24 @@
 import { useState } from "react";
 import axios from "axios";
 import ReactAudioPlayer from "react-audio-player";
+import { Button, Table, Form, Image } from "react-bootstrap";
+import 'bootstrap/dist/css/bootstrap.min.css';
+import styled from "styled-components";
 import useSpotifyAuth from "./Auth";
+
+const Div = styled.div`
+  margin: 20px 40px;
+`;
+
+const Title = styled.h3`
+  margin-bottom: 20px;
+  color: ##800020;
+`;
+
+const MsgField = styled.div`
+  width: 250px;
+  margin-top: 8px;
+`;
 
 const END_POINT = 'https://api.spotify.com/v1/search';
 
@@ -10,6 +27,7 @@ const SearchSongs = () => {
     const [songs, setSongs] = useState([]);
     const [message, setMessage] = useState('')
     const [playingTrackId, setPlayingTrackId] = useState(null);
+    const [isloading, setIsLoading] = useState(false);
 
     const token = useSpotifyAuth();
   
@@ -20,8 +38,9 @@ const SearchSongs = () => {
             setSongs([]);
             return;
       }
+      setIsLoading(true);
       try {
-        const response =  await axios(END_POINT + `?q=${query}&type=track&market=UA`, {
+        const response =  await axios(END_POINT + `?q=${query}&type=track&market=UA&limit=30`, {
           method: 'GET',
           headers: {
               Authorization: `Bearer ${token}`
@@ -31,34 +50,30 @@ const SearchSongs = () => {
         //popularityが高い順(降順)にソート
         //popularityは、アルゴリズムによって計算され、トラックの再生回数の合計とそれらの再生回数に基づいている
         //重複するトラックは個別に評価される
-        const soretedSongs = response.data.tracks.items.sort((a, b) => b.popularity - a.popularity);
-
-        const uniqueSongs = Array.from(new Set(soretedSongs.map(song => song.id))).map(id => {
-            return soretedSongs.find(song => song.id === id);
+        const sortedSongs = response.data.tracks.items.sort((a, b) => b.popularity - a.popularity);
+        const uniqueSongs = Array.from(new Set(sortedSongs.map(song => song.id))).map(id => {
+            return sortedSongs.find(song => song.id === id);
         });
 
-        // const groupedSongs = soretedSongs.reduce((acc, song) => {
-        //   if (!acc[song.name]) {
-        //     acc[song.name] = [];
-        //   }
-        //   acc[song.name].push(song);
-        //   return acc;
-        // }, []);
-
-        // const uniqueSongs = Object.values(groupedSongs).map(group => {
-        //   return group.reduce((max, song) => (song.popularity > max.popularity ? song : max), group[0]);
-        // });
-
         setSongs(uniqueSongs);
+        setIsLoading(false);
         setMessage('');
       } catch (error) {
         console.error('Error fetching songs:', error);
+        if (error.response && error.response.status === 401) {
+          setMessage("アクセストークンが無効または期限切れです。");
+        } else {
+          setMessage("エラーが発生しました。");
+        }
+      } finally {
+        setIsLoading(false);
       }
     };
 
     const submitHandler = (e) => {
         if (e.key === 'Enter' && e.shiftKey) {
-            searchSongs();
+          e.preventDefault();
+          searchSongs();
         }
     }
 
@@ -79,9 +94,6 @@ const SearchSongs = () => {
       const currentIndex = songs.findIndex(song => song.id === playingTrackId);
       const nextIndex = currentIndex + 1;
 
-      // if(nextIndex < songs.length) {
-      //   handlePlay(songs[nextIndex].id);
-      // }
       if (nextIndex < songs.length) {
         const nextSongId = songs[nextIndex].id;
         const nextAudioElement = document.getElementById(`track-${nextSongId}`);
@@ -93,41 +105,61 @@ const SearchSongs = () => {
     }
   
     return (
-      <div>
-        <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={submitHandler} />
-        <button onClick={searchSongs}>Search</button>
-        <div>{message}</div>
+      <Div>
+        <Title>Popular Music Search</Title>
+        <Form>
+          <Form.Group className="d-flex">
+            <Form.Control 
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={submitHandler}
+              style={{ width: '250px'}} />
+            <Button variant="secondary" onClick={searchSongs} disabled={isloading} >
+              Search
+            </Button>
+          </Form.Group>
+        </Form>
+        <MsgField>{message}</MsgField>
         {songs && songs.length > 0 && (
-          <table>
+        <Table style={{ marginTop: '25px' }}>
           <thead>
             <tr>
               <th>Song</th>
               <th>Artist(s)</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {songs.map(song => (
                 <tr key={song.id}>
                   <td>
-                    <img src={song.album.images[0].url} alt="Album cover" style={{ width: '50px', height: '50px', marginRight: '10px' }}/>
+                    <Image 
+                      src={song.album.images[0].url}
+                      alt={`${song.album.name}のカバー`}
+                      style={{ width: '60px', height: '60px', marginRight: '20px' }}/>
                     {song.name}
                   </td>
                   <td>{song.artists.map(artist => artist.name).join(', ')}</td>
                   <td>
-                    <ReactAudioPlayer
+                    {song.preview_url ? (
+                      <ReactAudioPlayer
                       id={`track-${song.id}`}
                       src={song.preview_url}
                       controls
                       volume={0.4}
                       onPlay={() => handlePlay(song.id)}
                       onEnded={playNextSong} />
+                    ) : (
+                      <span>プレビューが利用できません。</span>
+                    )}
                   </td>
                 </tr>
             ))}
           </tbody>
-        </table>
+        </Table>
         )}
-      </div>
+      </Div>
     )
   };
   
